@@ -5,7 +5,7 @@ import pylidc as pl
 scans = pl.query(pl.Scan)
 nscans = scans.count()
 for i,scan in enumerate(scans):
-    print i+1,"/",nscans
+    print(i+1,"/",nscans)
 
     images = scan.load_all_dicom_images(verbose=0)
     img_zs = [float(img.ImagePositionPatient[-1]) for img in images]

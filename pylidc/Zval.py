@@ -4,8 +4,8 @@ from sqlalchemy.orm import relationship
 from ._Base import Base
 from .Scan import Scan
 
-_off_limits = ['id','scan_id','scan','val'] 
-
+#_off_limits = ['id','scan_id','scan','val']
+_off_limits = []
 class Zval(Base):
     """
     """

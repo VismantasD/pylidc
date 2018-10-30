@@ -1,15 +1,15 @@
 import os, sys, re
 import numpy as np
 from xml.etree import ElementTree
-import dicom
-
+import pydicom as dicom
+import tqdm
 assert not os.path.exists(os.path.join(os.path.pardir, 'pylidc.sqlite')), "`pylidc.sqlite` already exists. Aborting."
 
-
+from itertools import chain
 # Change these. The dicom path should end with `LIDC-IDRI`, and the xml path should end with `tcia-lidc-xml`.
-dicom_root_path = '/media/matt/fatty/Data/LIDC-IDRI'
+dicom_root_path = 'G:\\lidc\\DOI'
 # The 161-resubmitted-... file should replace the 161.xml file in this directory. I replace it by overwriting 161.xml while taking the name 161.xml. I'm not sure if this makes a difference.
-xml_root_path = '/home/matt/Downloads/tcia-lidc-xml'
+xml_root_path = 'G:\\LIDC-XML-only\\tcia-lidc-xml'
 os.listdir(xml_root_path)
 
 
@@ -28,7 +28,7 @@ pl._Base.Base.metadata.create_all(pl._engine)
 # Add the dicom path as a configuration, so that the path to
 # dicom files persists across session. This is done so we can write
 # functions for visualizing annotations on top of CT data.
-pl._session.add(pl._Configuration(key='path_to_dicom_files', value=dicom_root_path))
+#pl._session.add(pl._Configuration(key='path_to_dicom_files', value=dicom_root_path))
 
 characteristic_names =\
 ['subtlety',
@@ -40,10 +40,50 @@ characteristic_names =\
 'spiculation',
 'texture',
 'malignancy']
-  
-xml_paths = np.load(os.path.join(os.path.curdir,'metadata','xml_paths.pkl'))
-init_ids  = np.load(os.path.join(os.path.curdir,'metadata','initial_release_ids.pkl'))
-tcia_ids  = np.load(os.path.join(os.path.curdir,'metadata','tcia_ids.pkl'))
+
+import json
+fn = os.path.join(os.path.curdir,'init_ids.txt')
+with open(fn, 'rt') as f:
+     init_ids = json.load(f)
+
+fn = os.path.join(os.path.curdir,'tcia_ids.txt')
+with open(fn, 'rt') as f:
+    tcia_ids = json.load(f)
+
+fn = os.path.join(os.path.curdir,'xml_paths.txt')
+with open(fn, 'rt') as f:
+    xml_paths = json.load(f)
+
+
+
+#
+# init_ids  = np.load(os.path.join(os.path.curdir,'metadata','initial_release_ids.pkl'))
+# fn = os.path.join(os.path.curdir,'init_ids.txt')
+# with open(fn, 'wt') as f:
+#     f.write(json.dumps(init_ids))
+#
+# tcia_ids  = np.load(os.path.join(os.path.curdir,'metadata','tcia_ids.pkl'))
+# fn = os.path.join(os.path.curdir,'tcia_ids.txt')
+# with open(fn, 'wt') as f:
+#     f.write(json.dumps(tcia_ids))
+
+
+# xml_paths = np.load(os.path.join(os.path.curdir,'metadata','xml_paths.pkl'))
+# import json
+# fn = os.path.join(os.path.curdir,'xml_paths.txt')
+# with open(fn, 'wt') as f:
+#     f.write(json.dumps(xml_paths))
+#
+# init_ids  = np.load(os.path.join(os.path.curdir,'metadata','initial_release_ids.pkl'))
+# fn = os.path.join(os.path.curdir,'init_ids.txt')
+# with open(fn, 'wt') as f:
+#     f.write(json.dumps(init_ids))
+#
+# tcia_ids  = np.load(os.path.join(os.path.curdir,'metadata','tcia_ids.pkl'))
+# fn = os.path.join(os.path.curdir,'tcia_ids.txt')
+# with open(fn, 'wt') as f:
+#     f.write(json.dumps(tcia_ids))
+
 
 def load_xml(path):
     with open(path,'r') as f:
@@ -56,13 +96,76 @@ def load_xml(path):
 assert os.path.exists(xml_root_path), "`xml_root_path` provided doesn't exist."
 
 def load_dcm(path):
-    with open(path,'r') as f:
-        img = dicom.read_file(f)
-    return img
+    return dicom.dcmread(path)
 
-assert os.path.exists(dicom_root_path), "`dicom_root_path` provided doesn't exist."
+
+def add_contours_for_big_or_small_nodule(ann, z_to_dcm_path):
+    contours = []
+    rois = ann.findall('roi')
+    for roi in rois:
+        # If the ROI only has a single edgemap,
+        # this means the "contour" is just a single dot,
+        # which we consider a stray mark and therefore, ignore.
+        # if len(roi.findall('edgeMap')) <= 1:
+        #     continue
+        # The coords line looks cryptic, but all we're doing is taking all the edgmaps and putting
+        # them into a single string with x,y points separated by a newline.
+        z_pos = float(roi.find('imageZposition').text)
+        contour = pl.Contour(
+            image_z_position=z_pos,
+            dicom_file_name=z_to_dcm_path[z_pos],
+            inclusion=roi.find('inclusion').text == 'TRUE',
+            coords="\n".join([(em.find('xCoord').text + ',' + em.find('yCoord').text) for em in roi.findall('edgeMap')])
+        )
+        contours.append(contour)
+    return contours
+
+
+
+def create_annotation_nodule(ann, z_to_dcm_path):
+    smallNodule = False
+    chars = ann.find('characteristics')
+    if chars is None or len(chars) == 0:
+        smallNodule = True
+    else:
+        for c in chars:
+            if c.text == '0' or c.text == '' or c.text == None:
+                smallNodule = True
+                break
+
+    # Ok, now we know that this a large class nodule annotation.
+    annotation = pl.Annotation(_nodule_id=ann.find('noduleID').text, nodule_type=0 if not smallNodule else 1)
+
+    if not smallNodule:
+        for char_name in characteristic_names:
+            setattr(annotation, char_name, int(chars.find(char_name).text))
+    annotation.contours = add_contours_for_big_or_small_nodule(ann, z_to_dcm_path)
+    return annotation
+
+
+def create_annotation_non_nodule(ann, z_to_dcm_path):
+    # Ok, now we know that this a large class nodule annotation.
+    annotation = pl.Annotation(_nodule_id=ann.find('nonNoduleID').text, nodule_type=2)
+    annotation.contours = []
+    z_pos = float(ann.find('imageZposition').text)
+
+    contour = pl.Contour(
+        image_z_position=z_pos,
+        dicom_file_name=z_to_dcm_path[z_pos],
+        inclusion=True,
+        coords="\n".join([(em.find('xCoord').text + ',' + em.find('yCoord').text) for em in ann.findall('locus')])
+    )
+    annotation.contours.append(contour)
+    return annotation
+
+
+
+
+
+assert os.path.exists(dicom_root_path), "r`dicom_root_path` provided doesn't exist."
 
 for count,xml_base_path in enumerate(xml_paths):
+    print(f'---==={count}===---')
     sys.stdout.write('Populating: %04d / 1018\r' % (count+1))
     sys.stdout.flush()
 
@@ -84,7 +187,7 @@ for count,xml_base_path in enumerate(xml_paths):
     # This takes some work to accomplish...
     zs    = [float(img.ImagePositionPatient[-1]) for img in dcm_imgs]
     inums = [float(img.InstanceNumber) for img in dcm_imgs]
-    inds = range(len(zs))
+    inds = list(range(len(zs)))
     while np.unique(zs).shape[0] != len(inds):
         for i in inds:
             for j in inds:
@@ -113,10 +216,10 @@ for count,xml_base_path in enumerate(xml_paths):
         study_instance_uid      = study_instance_uid,
         series_instance_uid     = series_instance_uid,
         patient_id              = tcia_ids[xml_base_path],
-        slice_thickness         = float(img.SliceThickness),
-        pixel_spacing           = float(img.PixelSpacing[0]),
+        slice_thickness         = float(dcm_imgs[0].SliceThickness),
+        pixel_spacing           = float(dcm_imgs[0].PixelSpacing[0]),
         is_from_initial         = (tcia_ids[xml_base_path] in init_ids),
-        contrast_used           = any(['Contrast' in d for d in dir(img)]),
+        contrast_used           = any(['Contrast' in d for d in dir(dcm_imgs[0])]),
         sorted_dicom_file_names = ",".join(dcm_file_paths)
     )
 
@@ -124,44 +227,18 @@ for count,xml_base_path in enumerate(xml_paths):
     # Now we add the annotations for nodules >3mm to the scan.
     for session in xml_tree.findall('readingSession'):
         for ann in session.findall('unblindedReadNodule'):
-            # If the nodule annotation doesn't contain a characteristics
-            # field, we continue, since we only care about the large nodule class.
-            chars = ann.find('characteristics')
-            if chars is None or len(chars)==0:
+            try:
+                annotation = create_annotation_nodule(ann, z_to_dcm_path)
+            except:
+                print(xml_base_path, ann.find('noduleID').text)
                 continue
-            # There are a few cases where a small nodule actually *does* have a characteristics field, but all the characteristics are 0 or blank.
-            bad_annotation = False
-            for c in chars:
-                if c.text == '0' or c.text == '' or c.text == None:
-                    bad_annotation = True
-                    break
-            if bad_annotation:
+            scan.annotations.append(annotation)
+        for ann in session.findall('nonNodule'):
+            try:
+                annotation = create_annotation_non_nodule(ann, z_to_dcm_path)
+            except:
+                print(xml_base_path, ann.find('nonNoduleID').text)
                 continue
-            
-            # Ok, now we know that this a large class nodule annotation.
-            annotation = pl.Annotation(_nodule_id=ann.find('noduleID').text)
-            for char_name in characteristic_names:
-                setattr(annotation, char_name, int(chars.find(char_name).text))
-
-            # Now we need to go one last level and add all the contours for each annotation.
-            annotation.contours = []
-            rois = ann.findall('roi')
-            for roi in rois:
-                # If the ROI only has a single edgemap, 
-                # this means the "contour" is just a single dot,
-                # which we consider a stray mark and therefore, ignore.
-                if len(roi.findall('edgeMap')) <= 1:
-                    continue
-                # The coords line looks cryptic, but all we're doing is taking all the edgmaps and putting
-                # them into a single string with x,y points separated by a newline.
-                z_pos = float(roi.find('imageZposition').text) 
-                contour = pl.Contour(
-                    image_z_position = z_pos,
-                    dicom_file_name  = z_to_dcm_path[ z_pos ],
-                    inclusion        = roi.find('inclusion').text == 'TRUE',
-                    coords           = "\n".join([(em.find('xCoord').text+','+em.find('yCoord').text) for em in roi.findall('edgeMap')])
-                )
-                annotation.contours.append(contour)
             scan.annotations.append(annotation)
         pl._session.add(scan)
 print("")

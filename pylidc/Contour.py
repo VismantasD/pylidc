@@ -5,9 +5,9 @@ from ._Base import Base
 from .Scan import Scan
 from .Annotation import Annotation
 
-_off_limits = ['id','annotation_id','annotation',
-               'inclusion','image_z_position','dicom_file_name','coords']
-
+# _off_limits = ['id','annotation_id','annotation',
+#                'inclusion','image_z_position','dicom_file_name','coords']
+_off_limits = []
 class Contour(Base):
     """
     The Contour class holds the nodule boundary coordinate data of a 

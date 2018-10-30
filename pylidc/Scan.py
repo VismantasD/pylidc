@@ -54,10 +54,10 @@ if dicompath is None:
     if warndpath:
         warnings.warn(dpath_msg)
 
-_off_limits = ['id','study_instance_uid','series_instance_uid',
-               'patient_id','slice_thickness','pixel_spacing',
-               'contrast_used','is_from_initial','sorted_dicom_file_names']
-
+# _off_limits = ['id','study_instance_uid','series_instance_uid',
+#                'patient_id','slice_thickness','pixel_spacing',
+#                'contrast_used','is_from_initial','sorted_dicom_file_names']
+_off_limits = []
 class Scan(Base):
     """
     The Scan model class refers to the top-level XML file from the LIDC.

@@ -19,7 +19,8 @@ from scipy.spatial.distance import pdist,squareform
 from scipy.interpolate import RegularGridInterpolator
 
 # For 3D visualizer.
-from skimage.measure import marching_cubes, mesh_surface_area
+from skimage.measure import marching_cubes_classic as marching_cubes
+from skimage.measure import mesh_surface_area
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from scipy.spatial import Delaunay
@@ -37,9 +38,9 @@ feature_names = \
     'texture',
     'malignancy')
 
-_off_limits = ['id','scan_id','_nodule_id','scan'] + \
-              list(feature_names)
-
+# _off_limits = ['id','scan_id','_nodule_id','scan'] + \
+#               list(feature_names)
+_off_limits = []
 viz3dbackends = ['matplotlib', 'mayavi']
 
 class Annotation(Base):
@@ -175,6 +176,8 @@ class Annotation(Base):
     spiculation       = sq.Column('spiculation',       sq.Integer)
     texture           = sq.Column('texture',           sq.Integer)
     malignancy        = sq.Column('malignancy',        sq.Integer)
+
+    nodule_type       = sq.Column('nodule_type',       sq.Integer)
 
     def __repr__(self):
         return "Annotation(id=%d,scan_id=%d)" % (self.id, self.scan_id)
