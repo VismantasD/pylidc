@@ -306,6 +306,33 @@ class Scan(Base):
     def cluster_annotations(self, metric='min', tol=None, factor=0.9,
                             min_tol=1e-1, return_distance_matrix=False,
                             verbose=True):
+        annotations = self.annotations
+        return self.cluster_annotations_inner(
+            metric,
+            tol,
+            factor,
+            min_tol,
+            return_distance_matrix,
+            verbose,
+            annotations)
+
+    def cluster_annotations_large_only(self, metric='min', tol=None, factor=0.9,
+                            min_tol=1e-1, return_distance_matrix=False,
+                            verbose=True):
+        annotations = [annotation for annotation in self.annotations if annotation.nodule_type == 0]
+        return self.cluster_annotations_inner(
+            metric,
+            tol,
+            factor,
+            min_tol,
+            return_distance_matrix,
+            verbose,
+            annotations)
+
+
+    def cluster_annotations_inner(self, metric='min', tol=None, factor=0.9,
+                            min_tol=1e-1, return_distance_matrix=False,
+                            verbose=True, annotations=None):
         """
         Estimate which annotations refer to the same physical 
         nodule in the CT scan. This method clusters all nodule Annotations for
@@ -394,7 +421,7 @@ class Scan(Base):
         elif not callable(metric):
             metric = metrics[metric]
 
-        N = len(self.annotations)
+        N = len(annotations)
 
         tol = self.slice_thickness if tol is None else tol
         assert tol >= 0, "`tol` should be >= 0."
@@ -403,14 +430,14 @@ class Scan(Base):
         if   N == 0:
             return []
         elif N == 1:
-            return [[self.annotations[0]]]
+            return [[annotations[0]]]
 
         D = np.zeros((N,N)) # The distance matrix.
 
         for i in range(N):
             for j in range(i+1,N):
-                D[i,j] = D[j,i] = metric(self.annotations[i],
-                                         self.annotations[j])
+                D[i,j] = D[j,i] = metric(annotations[i],
+                                         annotations[j])
 
         adjacency = D <= tol
         nnods, cids = connected_components(adjacency, directed=False)
@@ -433,7 +460,7 @@ class Scan(Base):
 
         clusters = [[] for _ in range(nnods)]
         for i,cid in enumerate(cids):
-            clusters[cid].append(self.annotations[i])
+            clusters[cid].append(annotations[i])
 
         # Sort the clusters by increasing average z value of centroids.
         # This is really a convienience thing for the `scan.visualize` method.
