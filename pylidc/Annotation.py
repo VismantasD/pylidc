@@ -963,7 +963,7 @@ class Annotation(Base):
                                 for c in sorted(self.contours,
                                         key=lambda c: c.image_z_position)])
 
-    def boolean_mask(self, pad=None, bbox=None, include_contour_points=False):
+    def boolean_mask(self, pad=None, bbox=None, include_contour_points=False, exclusions=True):
         """
         A boolean volume where 1 indicates nodule and 0 indicates
         non-nodule. The `mask` volume covers the extent of the voxels
@@ -1050,6 +1050,9 @@ class Annotation(Base):
                     mask[i,j,k] = False
 
         # Second, we "turn off" pixels enclosed by exclusion contours.
+        if not exclusions:
+            return mask
+
         for contour in self.contours:
             if not contour.inclusion:
                 zi = z_to_index(contour.image_z_position)
